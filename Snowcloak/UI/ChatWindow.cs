@@ -34,6 +34,7 @@ public class ChatWindow : WindowMediatorSubscriberBase
     private sealed record ChatLine(DateTime Timestamp, string Sender, string Message);
 
     private readonly ApiController _apiController;
+    private readonly ChatService _chatService;
     private readonly PairManager _pairManager;
     private readonly ServerConfigurationManager _serverManager;
     private readonly Dictionary<ChatChannelKey, List<ChatLine>> _channelLogs = [];
@@ -52,10 +53,12 @@ public class ChatWindow : WindowMediatorSubscriberBase
     private bool _isEditingStandardChannelTopic;
 
     public ChatWindow(ILogger<ChatWindow> logger, SnowMediator mediator, ApiController apiController,
-        PairManager pairManager, ServerConfigurationManager serverManager, PerformanceCollectorService performanceCollectorService)
+        PairManager pairManager, ServerConfigurationManager serverManager, PerformanceCollectorService performanceCollectorService,
+        ChatService chatService)
         : base(logger, mediator, "Snowcloak Chat###SnowcloakChatWindow", performanceCollectorService)
     {
         _apiController = apiController;
+        _chatService = chatService;
         _pairManager = pairManager;
         _serverManager = serverManager;
 
@@ -502,6 +505,7 @@ public class ChatWindow : WindowMediatorSubscriberBase
             var group = GetGroupData(channel.Id);
             if (group == null) return;
             _ = _apiController.GroupChatSendMsg(new GroupDto(group), chatMessage);
+            _chatService.PrintLocalGroupChat(group, chatMessage.PayloadContent);
         }
         else if (channel.Kind == ChannelKind.Standard)
         {
@@ -515,6 +519,7 @@ public class ChatWindow : WindowMediatorSubscriberBase
             var userData = GetUserData(channel.Id);
             if (userData == null) return;
             _ = _apiController.UserChatSendMsg(new UserDto(userData), chatMessage);
+            _chatService.PrintLocalUserChat(chatMessage.PayloadContent);
             _pinnedDirectChannels.Add(channel.Id);
         }
 

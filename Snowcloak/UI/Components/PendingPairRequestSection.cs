@@ -108,7 +108,7 @@ public sealed class PendingPairRequestSection
 
                 if (ElezenImgui.ShowIconButton(FontAwesomeIcon.Times, "Reject"))
                 {
-                    _ = _pairRequestService.RespondAsync(request.Request, false, "Rejected by user");
+                    _ = _pairRequestService.RespondAsync(request.Request, false);
                 }
             }
 

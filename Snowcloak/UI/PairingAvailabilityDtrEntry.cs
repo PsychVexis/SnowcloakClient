@@ -83,7 +83,16 @@ public sealed class PairingAvailabilityDtrEntry : IDisposable, IHostedService
     private IDtrBarEntry CreateEntry()
     {
         var entry = _dtrBar.Get("Snowcloak Pairing");
-        entry.OnClick = _ => _snowMediator.Publish(new UiToggleMessage(typeof(PairingAvailabilityWindow)));
+        entry.OnClick = _ =>
+        {
+            if (_pairRequestService.PendingRequests.Count > 0)
+            {
+                _snowMediator.Publish(new OpenFrostbrandUiMessage());
+                return;
+            }
+
+            _snowMediator.Publish(new UiToggleMessage(typeof(PairingAvailabilityWindow)));
+        };
         return entry;
     }
 

@@ -124,6 +124,11 @@ public class CompactUi : WindowMediatorSubscriberBase
         WindowName = $"{windowTitle}###SnowcloakSyncMainUI";
 #endif
         Mediator.Subscribe<SwitchToMainUiMessage>(this, (_) => IsOpen = true);
+        Mediator.Subscribe<OpenFrostbrandUiMessage>(this, (_) =>
+        {
+            IsOpen = true;
+            _selectedMenu = Menu.Frostbrand;
+        });
         Mediator.Subscribe<SwitchToIntroUiMessage>(this, (_) => IsOpen = false);
         Mediator.Subscribe<CutsceneStartMessage>(this, (_) => UiSharedService_GposeStart());
         Mediator.Subscribe<CutsceneEndMessage>(this, (_) => UiSharedService_GposeEnd());

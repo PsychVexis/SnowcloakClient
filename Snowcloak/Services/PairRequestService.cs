@@ -36,6 +36,7 @@ public class PairRequestService : DisposableMediatorSubscriberBase
     private readonly DalamudUtilService _dalamudUtilService;
     private readonly IpcManager _ipcManager;
     private readonly IToastGui _toastGui;
+    private readonly IChatGui _chatGui;
     private readonly PairManager _pairManager;
     private readonly SnowProfileManager _snowProfileManager;
     private readonly ConcurrentDictionary<Guid, PendingRequest> _pendingRequests = new();
@@ -67,7 +68,7 @@ public class PairRequestService : DisposableMediatorSubscriberBase
 
     public PairRequestService(ILogger<PairRequestService> logger, SnowcloakConfigService configService,
         SnowMediator mediator, DalamudUtilService dalamudUtilService,
-        IpcManager ipcManager, IToastGui toastGui, IContextMenu contextMenu, IServiceProvider serviceProvider,
+        IpcManager ipcManager, IToastGui toastGui, IChatGui chatGui, IContextMenu contextMenu, IServiceProvider serviceProvider,
         ServerConfigurationManager serverConfigurationManager, PairManager pairManager, SnowProfileManager snowProfileManager)
         : base(logger, mediator)
     {
@@ -77,6 +78,7 @@ public class PairRequestService : DisposableMediatorSubscriberBase
         _dalamudUtilService = dalamudUtilService;
         _ipcManager = ipcManager;
         _toastGui = toastGui;
+        _chatGui = chatGui;
         _contextMenu = contextMenu;
         _pairManager = pairManager;
         _snowProfileManager = snowProfileManager;
@@ -832,6 +834,7 @@ public class PairRequestService : DisposableMediatorSubscriberBase
         Mediator.Publish(new PairingRequestListChangedMessage());
         var requesterName = GetRequesterDisplayName(dto, setNoteFromNearby: true);
         _toastGui.ShowQuest(requesterName + " sent a pairing request.");
+        _chatGui.Print($"[Snowcloak] {requesterName} sent a pairing request.");
     }
 
     private static bool IsMalformed(PairingRequestDto dto)

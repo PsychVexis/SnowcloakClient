@@ -73,10 +73,21 @@ public class ChatService : DisposableMediatorSubscriberBase
     {
         var chatMsg = message.ChatMsg;
         var senderDisplay = ResolveChatDisplayName(chatMsg.Sender);
+        PrintDirectChatMessage(senderDisplay, chatMsg.PayloadContent);
+    }
+
+    public void PrintLocalUserChat(byte[] payloadContent)
+    {
+        var senderDisplay = ResolveChatDisplayName(new UserData(_apiController.UID, _apiController.VanityId));
+        PrintDirectChatMessage(senderDisplay, payloadContent);
+    }
+
+    private void PrintDirectChatMessage(string senderDisplay, byte[] payloadContent)
+    {
         var prefix = new SeStringBuilder();
         prefix.AddText("[SnowChat] ");
         _chatGui.Print(new XivChatEntry{
-            MessageBytes = [..prefix.Build().Encode(), ..message.ChatMsg.PayloadContent],
+            MessageBytes = [..prefix.Build().Encode(), ..payloadContent],
             Name = senderDisplay,
             Type = XivChatType.Yell
         });
@@ -115,9 +126,23 @@ public class ChatService : DisposableMediatorSubscriberBase
             return;
 
         var chatMsg = message.ChatMsg;
-        var shellConfig = _serverConfigurationManager.GetShellConfigForGid(message.GroupInfo.GID);
-        var shellNumber = shellConfig.ShellNumber;
+        PrintGroupChatMessage(message.GroupInfo.GID, message.GroupInfo.Group.AliasOrGID, chatMsg.Sender, chatMsg.SenderName, chatMsg.PayloadContent, chatMsg.SenderHomeWorldId);
+    }
 
+    public void PrintLocalGroupChat(GroupData group, byte[] payloadContent)
+    {
+        if (_snowcloakConfig.Current.DisableChat)
+            return;
+
+        var sender = new UserData(_apiController.UID, _apiController.VanityId);
+        var senderName = _dalamudUtil.GetPlayerName();
+        var senderHomeWorldId = _dalamudUtil.GetHomeWorldId();
+        PrintGroupChatMessage(group.GID, group.AliasOrGID, sender, senderName, payloadContent, senderHomeWorldId);
+    }
+
+    private void PrintGroupChatMessage(string gid, string fallbackGroupName, UserData sender, string senderName, byte[] payloadContent, uint senderHomeWorldId)
+    {
+        var shellConfig = _serverConfigurationManager.GetShellConfigForGid(gid);
         if (!shellConfig.Enabled)
             return;
 
@@ -128,30 +153,31 @@ public class ChatService : DisposableMediatorSubscriberBase
         var msg = new SeStringBuilder();
         if (extraChatTags)
         {
-            msg.Add(ChatUtils.CreateExtraChatTagPayload(message.GroupInfo.GID));
+            msg.Add(ChatUtils.CreateExtraChatTagPayload(gid));
             msg.Add(RawPayload.LinkTerminator);
         }
         if (color != 0)
             msg.AddUiForeground(color);
         msg.AddText("[SnowChat] ");
-        if (message.ChatMsg.Sender.UID.Equals(_apiController.UID, StringComparison.Ordinal))
+        if (sender.UID.Equals(_apiController.UID, StringComparison.Ordinal))
         {
             // Don't link to your own character
-            msg.AddText(chatMsg.SenderName);
+            msg.AddText(senderName);
         }
         else
         {
-            msg.Add(new PlayerPayload(chatMsg.Sender.AliasOrUID, chatMsg.SenderHomeWorldId));
+            msg.Add(new PlayerPayload(sender.AliasOrUID, (ushort)senderHomeWorldId));
         }
-        var shellName = _serverConfigurationManager.GetNoteForGid(message.GroupInfo.GID) ?? message.GroupInfo.Group.AliasOrGID;
+        var shellName = _serverConfigurationManager.GetNoteForGid(gid) ?? fallbackGroupName;
         msg.AddText($"@{shellName}: ");
-        msg.Append(SeString.Parse(message.ChatMsg.PayloadContent));
+        msg.Append(SeString.Parse(payloadContent));
         if (color != 0)
             msg.AddUiForegroundOff();
 
-        _chatGui.Print(new XivChatEntry{
+        _chatGui.Print(new XivChatEntry
+        {
             Message = msg.Build(),
-            Name = chatMsg.SenderName,
+            Name = senderName,
             Type = logKind
         });
     }
