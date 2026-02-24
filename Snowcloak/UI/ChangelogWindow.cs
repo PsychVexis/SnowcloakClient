@@ -251,6 +251,17 @@ public class ChangelogWindow : WindowMediatorSubscriberBase
     {
         var entries = new List<ChangelogEntry>
         {
+            new(VersionFromString("2.3.2"), 
+            [
+                new ChangelogSection("Changes and Bug Fixes", [
+                    "Public syncshells no longer require XIVAuth, and have had their capacity increased.",
+                    "Incoming Frostbrand pair requests now output to chat as well as just a toast notification.",
+                    "Messages you send through Snowcloak's chat should now show in the game's chat UI.",
+                    "Fixed rejected Frostbrand users getting notified.",
+                    "Clicking the Frostbrand DTR icon will take you to pending requests now instead if there are pending requests, rather than showing nearby users open to pairing.",
+                    "The Service Settings tab now has an option to backup and restore your secret key, character assignments, and user notes."
+                ])
+            ]),
             new(VersionFromString("2.3.1"),
             [
                 new ChangelogSection("New Feature - Venue Reminders",

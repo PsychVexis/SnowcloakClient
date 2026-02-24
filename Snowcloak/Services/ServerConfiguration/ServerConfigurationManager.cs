@@ -419,6 +419,28 @@ public class ServerConfigurationManager
         _notesConfig.Save();
     }
 
+    internal ServerNotesStorage GetNotesForServer(string serverUri)
+    {
+        if (string.IsNullOrWhiteSpace(serverUri))
+            return new ServerNotesStorage();
+
+        if (!_notesConfig.Current.ServerNotes.TryGetValue(serverUri, out var notes))
+            return new ServerNotesStorage();
+
+        return CloneNotesStorage(notes);
+    }
+
+    internal void ReplaceNotesForServer(string serverUri, ServerNotesStorage notes, bool save = true)
+    {
+        if (string.IsNullOrWhiteSpace(serverUri))
+            return;
+
+        _notesConfig.Current.ServerNotes[serverUri] = CloneNotesStorage(notes ?? new ServerNotesStorage());
+
+        if (save)
+            _notesConfig.Save();
+    }
+
     internal void SetNoteForGid(string gid, string note, bool save = true)
     {
         if (string.IsNullOrEmpty(gid)) return;
@@ -519,6 +541,20 @@ public class ServerConfigurationManager
     {
         TryCreateCurrentNotesStorage();
         return _notesConfig.Current.ServerNotes[CurrentApiUrl];
+    }
+
+    private static ServerNotesStorage CloneNotesStorage(ServerNotesStorage notes)
+    {
+        var gidComments = notes.GidServerComments ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        var uidComments = notes.UidServerComments ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        var uidNames = notes.UidLastSeenNames ?? new Dictionary<string, string>(StringComparer.Ordinal);
+
+        return new ServerNotesStorage()
+        {
+            GidServerComments = gidComments.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+            UidServerComments = uidComments.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+            UidLastSeenNames = uidNames.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
+        };
     }
 
     private ServerTagStorage CurrentServerTagStorage()

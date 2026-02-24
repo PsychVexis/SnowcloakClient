@@ -71,6 +71,10 @@ public class SettingsUi : WindowMediatorSubscriberBase
     private bool _xivAuthRegistrationInProgress = false;
     private bool _xivAuthRegistrationSuccess = false;
     private string? _xivAuthRegistrationMessage;
+    private const int SecretKeyBackupVersion = 1;
+    private bool _secretKeyBackupSuccess = false;
+    private string? _secretKeyBackupMessage = null;
+    private string _lastSecretKeyBackupDirectory = string.Empty;
     
     public SettingsUi(ILogger<SettingsUi> logger,
         UiSharedService uiShared, SnowcloakConfigService configService,
@@ -1814,10 +1818,176 @@ public class SettingsUi : WindowMediatorSubscriberBase
                     }
                     _uiShared.DrawHelpText("Hold CTRL to delete this service");
                 }
+
+                ImGui.Separator();
+                _uiShared.BigText("Snowcloak Backup");
+                _uiShared.DrawHelpText("Export and restore secret keys, character assignments, and notes for this service as a backup file for if you plan to reinstall the game.");
+
+                if (ElezenImgui.ShowIconButton(FontAwesomeIcon.Save, "Export secret key backup"))
+                {
+                    BeginSecretKeyBackupExport(selectedServer);
+                }
+                UiSharedService.AttachToolTip("Choose a location to save the backup file.");
+
+                ImGui.SameLine();
+                if (ElezenImgui.ShowIconButton(FontAwesomeIcon.FileImport, "Restore secret key backup"))
+                {
+                    BeginSecretKeyBackupImport(selectedServer);
+                }
+                UiSharedService.AttachToolTip("Restore secret keys, character assignments, and notes from a JSON backup file.");
+
+                if (!_secretKeyBackupMessage.IsNullOrEmpty())
+                {
+                    ElezenImgui.ColouredWrappedText(_secretKeyBackupMessage, _secretKeyBackupSuccess ? ImGuiColors.HealerGreen : ImGuiColors.DalamudRed);
+                }
+
                 ImGui.EndTabItem();
             }
             ImGui.EndTabBar();
         }
+    }
+
+    private void BeginSecretKeyBackupExport(ServerStorage selectedServer)
+    {
+        string defaultFileName = string.Join('_', $"Snowcloak-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json".Split(Path.GetInvalidFileNameChars()));
+        string? initialDirectory = Directory.Exists(_lastSecretKeyBackupDirectory) ? _lastSecretKeyBackupDirectory : null;
+
+        _uiShared.FileDialogManager.SaveFileDialog("Export backup", ".json", defaultFileName, ".json", (success, path) =>
+        {
+            if (!success) return;
+
+            try
+            {
+                var notes = _serverConfigurationManager.GetNotesForServer(selectedServer.ServerUri);
+
+                var backup = new SecretKeyBackupFile()
+                {
+                    Version = SecretKeyBackupVersion,
+                    ExportedAtUtc = DateTime.UtcNow,
+                    ServiceName = selectedServer.ServerName,
+                    ServiceUri = selectedServer.ServerUri,
+                    SecretKeys = CloneSecretKeys(selectedServer.SecretKeys),
+                    CharacterAssignments = CloneAuthentications(selectedServer.Authentications),
+                    Notes = CloneNotes(notes)
+                };
+
+                File.WriteAllText(path, JsonSerializer.Serialize(backup, new JsonSerializerOptions() { WriteIndented = true }));
+                _lastSecretKeyBackupDirectory = Path.GetDirectoryName(path) ?? string.Empty;
+                SetSecretKeyBackupStatus(
+                    $"Snowcloak backup exported: {backup.SecretKeys.Count} key(s), {backup.CharacterAssignments.Count} assignment(s), {backup.Notes.UidServerComments.Count} user note(s).",
+                    success: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to export Snowcloak backup");
+                SetSecretKeyBackupStatus("Snowcloak backup export failed. Check plugin logs for details.", success: false);
+            }
+        }, initialDirectory);
+    }
+
+    private void BeginSecretKeyBackupImport(ServerStorage selectedServer)
+    {
+        string? initialDirectory = Directory.Exists(_lastSecretKeyBackupDirectory) ? _lastSecretKeyBackupDirectory : null;
+        _uiShared.FileDialogManager.OpenFileDialog("Restore backup", ".json", (success, paths) =>
+        {
+            if (!success) return;
+            if (paths.FirstOrDefault() is not string path) return;
+
+            try
+            {
+                var fileContent = File.ReadAllText(path);
+                var imported = JsonSerializer.Deserialize<SecretKeyBackupFile>(fileContent, new JsonSerializerOptions()
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+                if (imported == null)
+                {
+                    throw new InvalidDataException("Backup file could not be parsed.");
+                }
+                if (imported.Version > SecretKeyBackupVersion)
+                {
+                    throw new InvalidDataException($"Backup version {imported.Version} is not supported by this client.");
+                }
+
+                imported.SecretKeys ??= [];
+                imported.CharacterAssignments ??= [];
+                imported.Notes ??= new ServerNotesStorage();
+
+                if (imported.CharacterAssignments.Any(a =>
+                        a.SecretKeyIdx != -1 && !imported.SecretKeys.ContainsKey(a.SecretKeyIdx)))
+                {
+                    throw new InvalidDataException("Backup contains character assignments that reference missing secret keys.");
+                }
+
+                selectedServer.SecretKeys = CloneSecretKeys(imported.SecretKeys);
+                selectedServer.Authentications = CloneAuthentications(imported.CharacterAssignments);
+                _serverConfigurationManager.ReplaceNotesForServer(selectedServer.ServerUri, CloneNotes(imported.Notes), save: true);
+                _serverConfigurationManager.Save();
+
+                _lastSecretKeyBackupDirectory = Path.GetDirectoryName(path) ?? string.Empty;
+                SetSecretKeyBackupStatus(
+                    $"Secret key backup restored: {selectedServer.SecretKeys.Count} key(s), {selectedServer.Authentications.Count} assignment(s), {imported.Notes.UidServerComments.Count} user note(s).",
+                    success: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to restore secret key backup");
+                SetSecretKeyBackupStatus("Secret key backup restore failed. Ensure the file is a valid backup JSON.", success: false);
+            }
+        }, 1, initialDirectory);
+    }
+
+    private void SetSecretKeyBackupStatus(string message, bool success)
+    {
+        _secretKeyBackupMessage = message;
+        _secretKeyBackupSuccess = success;
+    }
+
+    private static Dictionary<int, SecretKey> CloneSecretKeys(Dictionary<int, SecretKey> source)
+    {
+        return source.ToDictionary(
+            kvp => kvp.Key,
+            kvp => new SecretKey()
+            {
+                FriendlyName = kvp.Value.FriendlyName,
+                Key = kvp.Value.Key
+            });
+    }
+
+    private static List<Authentication> CloneAuthentications(IEnumerable<Authentication> source)
+    {
+        return source.Select(a => new Authentication()
+        {
+            CharacterName = a.CharacterName,
+            WorldId = a.WorldId,
+            SecretKeyIdx = a.SecretKeyIdx
+        }).ToList();
+    }
+
+    private static ServerNotesStorage CloneNotes(ServerNotesStorage notes)
+    {
+        var gidComments = notes.GidServerComments ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        var uidComments = notes.UidServerComments ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        var uidNames = notes.UidLastSeenNames ?? new Dictionary<string, string>(StringComparer.Ordinal);
+
+        return new ServerNotesStorage()
+        {
+            GidServerComments = gidComments.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+            UidServerComments = uidComments.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+            UidLastSeenNames = uidNames.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
+        };
+    }
+
+    [Serializable]
+    private sealed class SecretKeyBackupFile
+    {
+        public int Version { get; set; } = SecretKeyBackupVersion;
+        public DateTime ExportedAtUtc { get; set; } = DateTime.UtcNow;
+        public string ServiceName { get; set; } = string.Empty;
+        public string ServiceUri { get; set; } = string.Empty;
+        public Dictionary<int, SecretKey> SecretKeys { get; set; } = [];
+        public List<Authentication> CharacterAssignments { get; set; } = [];
+        public ServerNotesStorage Notes { get; set; } = new();
     }
 
     private string _uidToAddForIgnore = string.Empty;
